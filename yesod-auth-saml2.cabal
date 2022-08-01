@@ -12,7 +12,7 @@ version:            0.0
 -- bug-reports:
 
 -- The license under which the package is released.
--- license:
+license:            Apache-2.0
 author:             Fumiaki Kinoshita
 maintainer:         fumiaki.kinoshita@herp.co.jp
 
