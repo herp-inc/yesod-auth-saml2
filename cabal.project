@@ -1,0 +1,6 @@
+packages: .
+source-repository-package
+   type: git
+   location: https://github.com/herp-inc/wai-saml2
+   tag: 884682fcf879ac5128e2d776ef0dc36f7555d4c4
+   --sha256: 1n5ryfkb267444nhvh0b10dqgv8zf3llia96iawaqabiys022zsw
