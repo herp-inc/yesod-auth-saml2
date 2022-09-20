@@ -109,4 +109,4 @@ authLogin fetchConfig = do
           ]
 
   let Subject {subjectNameId} = assertionSubject assertion
-  setCredsRedirect (Creds pluginName subjectNameId extra) >>= sendResponse
+  setCredsRedirect (Creds pluginName (nameIdValue subjectNameId) extra) >>= sendResponse
