@@ -108,5 +108,5 @@ authLogin fetchConfig = do
             <- assertionAttributeStatement assertion
           ]
 
-  let Subject {subjectNameId} = assertionSubject assertion
-  setCredsRedirect (Creds pluginName (nameIdValue subjectNameId) extra) >>= sendResponse
+  let Subject {subjectNameID} = assertionSubject assertion
+  setCredsRedirect (Creds pluginName (nameIDValue subjectNameID) extra) >>= sendResponse
