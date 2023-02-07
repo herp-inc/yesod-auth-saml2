@@ -17,6 +17,7 @@ module Yesod.Auth.SAML2
     PrivateKey,
     parsePKCS8,
     fromX509,
+    Logger,
   )
 where
 
@@ -24,7 +25,6 @@ import Crypto.PubKey.RSA.Types (PrivateKey)
 import qualified Crypto.Store.PKCS8 as PKCS8
 import qualified Crypto.Store.X509 as X509
 import Data.Foldable (toList)
-import Data.String
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import qualified Data.X509 as X509
@@ -34,13 +34,15 @@ import Network.Wai.SAML2.Validation (validateResponse)
 import UnliftIO (throwIO)
 import Yesod.Auth
 import Yesod.Core
-import Yesod.Core.Types
+import Yesod.Core.Types hiding (Logger)
 
 -- | Metadata shared between IdP and SP
 type RelayState = Text
 
 -- | A function to fetch 'SAML2Config' dynamically
 type FetchConfig master = Maybe RelayState -> AuthHandler master SAML2Config
+
+type Logger master = Maybe RelayState -> Either SAML2Error Assertion -> AuthHandler master ()
 
 -- | Decode a private key encoded in PEM / PKCS8 format
 parsePKCS8 :: Text -> Either String PrivateKey
@@ -66,17 +68,20 @@ pluginName :: Text
 pluginName = "saml2"
 
 plugin :: forall master. YesodAuth master
-    => FetchConfig master
+    => Logger master
+    -> FetchConfig master
     -> AuthPlugin master
-plugin fetchConfig = AuthPlugin pluginName dispatch login where
+plugin logger fetchConfig = AuthPlugin pluginName dispatch login where
     dispatch :: Text -> [Text] -> AuthHandler master TypedContent
-    dispatch "POST" ["login"] = authLogin fetchConfig
+    dispatch "POST" ["login"] = authLogin logger fetchConfig
     dispatch _ _ = notFound
     login _ = [whamlet||] -- TODO
 
-authLogin :: FetchConfig master
+authLogin
+    :: Logger master
+    -> FetchConfig master
     -> AuthHandler master TypedContent
-authLogin fetchConfig = do
+authLogin logger fetchConfig = do
 
   -- Obtain the request body
   req <- waiRequest
@@ -93,13 +98,9 @@ authLogin fetchConfig = do
     Just val ->
       liftIO (validateResponse cfg val) >>= \case
         Left err -> do
-          $logInfo $ mconcat
-            [ fromString (show err)
-            , " RelayState: "
-            , maybe "" id relayState
-            ]
+          logger relayState (Left err)
           throwIO $ HCError NotAuthenticated
-        Right a -> pure a
+        Right a -> a <$ logger relayState (Right a)
     Nothing -> throwIO $ HCError $ InvalidArgs ["SAMLResponse is missing"]
 
   let extra = ((,) "RelayState" <$> toList relayState)
