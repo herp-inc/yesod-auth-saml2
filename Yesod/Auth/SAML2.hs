@@ -6,6 +6,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Yesod.Auth.SAML2
@@ -40,9 +41,9 @@ import Yesod.Core.Types hiding (Logger)
 type RelayState = Text
 
 -- | A function to fetch 'SAML2Config' dynamically
-type FetchConfig master = Maybe RelayState -> AuthHandler master SAML2Config
+type FetchConfig context master = Maybe RelayState -> AuthHandler master (context, SAML2Config)
 
-type Logger master = Maybe RelayState -> Either SAML2Error Assertion -> AuthHandler master ()
+type Logger context master = context -> Maybe RelayState -> Either SAML2Error Assertion -> AuthHandler master ()
 
 -- | Decode a private key encoded in PEM / PKCS8 format
 parsePKCS8 :: Text -> Either String PrivateKey
@@ -67,19 +68,19 @@ fromX509 saml2PrivKey certificate = do
 pluginName :: Text
 pluginName = "saml2"
 
-plugin :: forall master. YesodAuth master
-    => Logger master
-    -> FetchConfig master
+plugin :: forall context master. YesodAuth master
+    => Logger context master
+    -> FetchConfig context master
     -> AuthPlugin master
 plugin logger fetchConfig = AuthPlugin pluginName dispatch login where
     dispatch :: Text -> [Text] -> AuthHandler master TypedContent
-    dispatch "POST" ["login"] = authLogin logger fetchConfig
+    dispatch "POST" ["login"] = authLogin @context logger fetchConfig
     dispatch _ _ = notFound
     login _ = [whamlet||] -- TODO
 
 authLogin
-    :: Logger master
-    -> FetchConfig master
+    :: Logger context master
+    -> FetchConfig context master
     -> AuthHandler master TypedContent
 authLogin logger fetchConfig = do
 
@@ -92,15 +93,15 @@ authLogin logger fetchConfig = do
   (body, _) <- liftIO $ parseRequestBodyEx bodyOpts lbsBackEnd req
 
   let relayState = T.decodeUtf8 <$> lookup "RelayState" body
-  cfg <- fetchConfig relayState
+  (context, cfg) <- fetchConfig relayState
 
   assertion <- case lookup "SAMLResponse" body of
     Just val ->
       liftIO (validateResponse cfg val) >>= \case
         Left err -> do
-          logger relayState (Left err)
+          logger context relayState (Left err)
           throwIO $ HCError NotAuthenticated
-        Right a -> a <$ logger relayState (Right a)
+        Right a -> a <$ logger context relayState (Right a)
     Nothing -> throwIO $ HCError $ InvalidArgs ["SAMLResponse is missing"]
 
   let extra = ((,) "RelayState" <$> toList relayState)
