@@ -38,7 +38,7 @@ library
         unliftio,
         wai,
         wai-extra,
-        wai-saml2,
+        wai-saml2 ^>= 0.4,
         x509,
         yesod-auth,
         yesod-core

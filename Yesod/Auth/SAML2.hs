@@ -101,7 +101,7 @@ authLogin logger fetchConfig = do
         Left err -> do
           logger context relayState (Left err)
           throwIO $ HCError NotAuthenticated
-        Right a -> a <$ logger context relayState (Right a)
+        Right (a, _) -> a <$ logger context relayState (Right a)
     Nothing -> throwIO $ HCError $ InvalidArgs ["SAMLResponse is missing"]
 
   let extra = ((,) "RelayState" <$> toList relayState)
