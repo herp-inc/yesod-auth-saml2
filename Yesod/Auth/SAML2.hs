@@ -22,16 +22,19 @@ module Yesod.Auth.SAML2
   )
 where
 
+import Control.Monad.Trans.Except
 import Crypto.PubKey.RSA.Types (PrivateKey)
 import qualified Crypto.Store.PKCS8 as PKCS8
 import qualified Crypto.Store.X509 as X509
 import Data.Foldable (toList)
 import Data.Text (Text)
 import qualified Data.Text.Encoding as T
+import Data.Time.Clock (getCurrentTime)
 import qualified Data.X509 as X509
 import Network.Wai.Parse
 import Network.Wai.SAML2 as SAML2
-import Network.Wai.SAML2.Validation (validateResponse)
+import Network.Wai.SAML2.Response
+import Network.Wai.SAML2.Validation
 import UnliftIO (throwIO)
 import Yesod.Auth
 import Yesod.Core
@@ -43,7 +46,7 @@ type RelayState = Text
 -- | A function to fetch 'SAML2Config' dynamically
 type FetchConfig context master = Maybe RelayState -> AuthHandler master (context, SAML2Config)
 
-type Logger context master = context -> Maybe RelayState -> Either SAML2Error Assertion -> AuthHandler master ()
+type Logger context master = context -> Maybe RelayState -> Maybe Response -> Either SAML2Error Assertion -> AuthHandler master ()
 
 -- | Decode a private key encoded in PEM / PKCS8 format
 parsePKCS8 :: Text -> Either String PrivateKey
@@ -96,12 +99,18 @@ authLogin logger fetchConfig = do
   (context, cfg) <- fetchConfig relayState
 
   assertion <- case lookup "SAMLResponse" body of
-    Just val ->
-      liftIO (validateResponse cfg val) >>= \case
+    Just responseData -> do
+      now <- liftIO getCurrentTime
+      (responseXmlDoc, samlResponse) <- liftIO (runExceptT (decodeResponse responseData)) >>= \case
         Left err -> do
-          logger context relayState (Left err)
+          logger context relayState Nothing (Left err)
+          throwIO $ HCError $ InvalidArgs ["SAMLResponse"]
+        Right a -> pure a
+      liftIO (runExceptT (validateSAMLResponse cfg responseXmlDoc samlResponse now)) >>= \case
+        Left err -> do
+          logger context relayState (Just samlResponse) (Left err)
           throwIO $ HCError NotAuthenticated
-        Right (a, _) -> a <$ logger context relayState (Right a)
+        Right a -> a <$ logger context relayState (Just samlResponse) (Right a)
     Nothing -> throwIO $ HCError $ InvalidArgs ["SAMLResponse is missing"]
 
   let extra = ((,) "RelayState" <$> toList relayState)

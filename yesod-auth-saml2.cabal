@@ -35,6 +35,8 @@ library
         cryptostore,
         exceptions,
         text,
+        time,
+        transformers,
         unliftio,
         wai,
         wai-extra,
