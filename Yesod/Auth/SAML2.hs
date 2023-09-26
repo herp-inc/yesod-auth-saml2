@@ -44,9 +44,9 @@ import Yesod.Core.Types hiding (Logger)
 type RelayState = Text
 
 -- | A function to fetch 'SAML2Config' dynamically
-type FetchConfig context master = Maybe RelayState -> AuthHandler master (context, SAML2Config)
+type FetchConfig context master = Response -> Maybe RelayState -> AuthHandler master (context, SAML2Config)
 
-type Logger context master = context -> Maybe RelayState -> Maybe Response -> Either SAML2Error Assertion -> AuthHandler master ()
+type Logger context master = Maybe context -> Maybe RelayState -> Maybe Response -> Either SAML2Error Assertion -> AuthHandler master ()
 
 -- | Decode a private key encoded in PEM / PKCS8 format
 parsePKCS8 :: Text -> Either String PrivateKey
@@ -96,21 +96,23 @@ authLogin logger fetchConfig = do
   (body, _) <- liftIO $ parseRequestBodyEx bodyOpts lbsBackEnd req
 
   let relayState = T.decodeUtf8 <$> lookup "RelayState" body
-  (context, cfg) <- fetchConfig relayState
 
   assertion <- case lookup "SAMLResponse" body of
     Just responseData -> do
       now <- liftIO getCurrentTime
       (responseXmlDoc, samlResponse) <- liftIO (runExceptT (decodeResponse responseData)) >>= \case
         Left err -> do
-          logger context relayState Nothing (Left err)
+          logger Nothing relayState Nothing (Left err)
           throwIO $ HCError $ InvalidArgs ["SAMLResponse"]
         Right a -> pure a
+
+      (context, cfg) <- fetchConfig samlResponse relayState
+
       liftIO (runExceptT (validateSAMLResponse cfg responseXmlDoc samlResponse now)) >>= \case
         Left err -> do
-          logger context relayState (Just samlResponse) (Left err)
+          logger (Just context) relayState (Just samlResponse) (Left err)
           throwIO $ HCError NotAuthenticated
-        Right a -> a <$ logger context relayState (Just samlResponse) (Right a)
+        Right a -> a <$ logger (Just context) relayState (Just samlResponse) (Right a)
     Nothing -> throwIO $ HCError $ InvalidArgs ["SAMLResponse is missing"]
 
   let extra = ((,) "RelayState" <$> toList relayState)
